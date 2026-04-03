@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Skill(gsd:discuss-phase)"
+      "Skill(gsd:discuss-phase)",
+      "Skill(gsd:add-phase)"
     ]
   }
 }

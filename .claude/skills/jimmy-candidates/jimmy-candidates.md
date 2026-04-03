@@ -4,80 +4,80 @@ You are executing the jimmy-candidates skill. Follow these instructions exactly.
 
 ## What this skill does
 
-`jimmy-skill` is a CLI that sends a single prompt to ChatJimmy (a hardware-accelerated Llama 3.1 8B running at ~17K tokens/sec) and returns a JSON object. It is fast and cheap — ideal for generating multiple variations of something so you can pick the best one.
+`jimmy-skill` is a CLI that sends prompts to ChatJimmy (a hardware-accelerated Llama 3.1 8B running at ~17K tokens/sec) and returns structured JSON. It is fast and cheap — ideal for generating multiple variations of something so you can pick the best one.
 
-This skill calls `jimmy-skill` N times (once per candidate) and returns all results as a JSON array. Use it when you need:
+This skill calls `jimmy-skill --parallel` with a JSON array of N identical prompts and returns all results as a JSON array. Use it when you need:
 - Multiple phrasing or wording candidates to compare and pick the best
 - Cheap first-pass generation before applying your own reasoning
 - Parallel exploration of a prompt from different angles
 - Draft content that you will then refine or evaluate
 
-## CRITICAL: How parallelism works here
-
-`jimmy-skill` accepts ONE prompt and returns ONE result. It has NO `--parallel` flag. Do not attempt to use one.
-
-Parallelism in this skill means: **use N separate Bash tool calls in a single response message**. Claude Code executes tool calls that appear in the same response at the same time. This is what makes the calls parallel — not anything in the shell command itself.
-
-**DO NOT** write a shell loop (`for i in ...`), pipe multiple calls together, or use `&` background processes. Each candidate must be a separate Bash tool call.
-
-Correct approach for n=3:
-```
-Response message containing 3 Bash tool calls at once:
-  Bash call 1: jimmy-skill "your prompt"
-  Bash call 2: jimmy-skill "your prompt"
-  Bash call 3: jimmy-skill "your prompt"
-```
-
-These 3 calls run simultaneously. Wait for all 3 to complete, then assemble results.
-
 ## Inputs
 
 You will be provided:
-- `prompt`: string — the prompt to send to Jimmy (same prompt is sent to every call)
-- `n`: integer — number of candidates to generate (must be >= 1; practical max ~10)
+- `prompt`: string — the prompt to send to Jimmy (same prompt is sent for every candidate)
+- `n`: integer — number of candidates to generate (must be >= 1; practical max ~20)
 - `system` (optional): string — a system prompt to pass via --system to every call
+- `max_concurrent` (optional integer, default 10): maximum simultaneous HTTP requests passed to `jimmy-skill --max-concurrent`
+- `max_iterations` (optional integer, default 1): how many times each prompt is sent to Jimmy per array item. Jimmy runs at ~17K tokens/sec — use `max_iterations > 1` to get multiple results per item at minimal cost. For jimmy-candidates, each item is the same prompt repeated, and `max_iterations` adds more repetitions within each item. In most cases, set `n` to the number of candidates you want and leave `max_iterations=1`.
 
 ## Step 1: Validate inputs
 
 - `prompt` must be a non-empty string. If missing or empty, output `{"error": "prompt is required", "error_type": "usage"}` and stop.
 - `n` must be a positive integer. If missing, zero, or negative, output `{"error": "n must be a positive integer", "error_type": "usage"}` and stop.
+- If `max_concurrent` is provided and is less than 1, output `{"error": "max_concurrent must be >= 1", "error_type": "usage"}` and stop.
+- If `max_iterations` is provided and is less than 1, output `{"error": "max_iterations must be >= 1", "error_type": "usage"}` and stop.
 
-## Step 2: Issue N Bash tool calls in one response
+## Step 2: Construct the JSON array and call jimmy-skill --parallel
 
-In your next response, include exactly N Bash tool calls and nothing else. Do not write any text before or between them — just the tool calls.
+jimmy-candidates sends the SAME prompt N times. Construct a JSON array with N identical items (each item has the same `prompt` text; no per-item `system` is needed since all items are identical — use the shared `--system` flag instead).
 
-Command when no system prompt:
+In your next response, issue a single Bash tool call:
+
+```bash
+jimmy-skill --parallel --max-concurrent MAX_CONCURRENT --max-iterations MAX_ITERATIONS << 'JIMMY_INPUT'
+[
+  {"prompt": "PROMPT_TEXT"},
+  {"prompt": "PROMPT_TEXT"},
+  ...  (N items total, all identical)
+]
+JIMMY_INPUT
 ```
-jimmy-skill "PROMPT"
-```
 
-Command when system prompt is provided:
-```
-jimmy-skill "PROMPT" --system "SYSTEM"
-```
+Replace `PROMPT_TEXT` with the actual prompt. Replace `MAX_CONCURRENT` and `MAX_ITERATIONS` with the provided values (or their defaults: 10 and 1). `N` is the number of candidates requested. Include `--system "SYSTEM_TEXT"` before `<<` if system is provided.
 
-Replace PROMPT with the actual prompt text. Replace SYSTEM with the system text if provided. The prompt is identical across all N calls — Jimmy's temperature gives natural variation.
+When constructing the JSON array, escape any double-quote characters in the prompt text as `\"` to keep the JSON valid.
 
-**Reminder:** N calls in one response = parallel. One call with a loop = wrong.
+Use the heredoc form `<< 'JIMMY_INPUT'` (quoted delimiter) to prevent shell expansion of `$` in the prompt text.
+
+The binary handles all concurrency internally. This is ONE Bash tool call.
 
 ## Step 3: Collect results
 
-Wait for all N Bash calls to complete. Each stdout is always valid JSON (Jimmy outputs JSON even on errors — never empty, never plain text). Collect the stdout from each call in order (0 to N-1).
+Wait for the single Bash call to complete. The stdout is a JSON array. Parse it. Each item has shape `{ index, results: [{ response, tokens, elapsed_ms }] }`.
+
+For candidates with `max_iterations=1` (the default), read `item.results[0].response` for the candidate text.
+
+If `max_iterations > 1`, there are multiple results per item: `item.results[0].response`, `item.results[1].response`, etc. Flatten all responses across all items and results into the candidates array if needed, or keep the nested structure — caller decides.
 
 ## Step 4: Assemble output array
 
-For each result at position I (0-based):
+For each item at index I (0-based) in the parallel output:
+- Extract `item.results[0]` (or all results if `max_iterations > 1`)
+- If `item.results[0].response` is not null: it is a successful candidate
+- If `item.results[0].response` is null: construct an error candidate item using `item.results[0].error` and `item.results[0].error_type`
 
-1. Parse the stdout JSON
-2. Add `"index": I` to the object
-3. Append to the array
-
-If a Bash call failed entirely or produced non-JSON stdout (shouldn't happen, but be safe), construct an error item:
+Output array item shape (for `max_iterations=1`):
 ```json
-{ "index": I, "response": null, "tokens": { "prompt": 0, "completion": 0, "total": 0 }, "elapsed_ms": 0, "error": "bash call failed: STDERR", "error_type": "parse" }
+{ "index": I, "response": "...", "tokens": { ... }, "elapsed_ms": N }
 ```
 
-The array must contain exactly N items regardless of failures.
+Error item shape:
+```json
+{ "index": I, "response": null, "tokens": { "prompt": 0, "completion": 0, "total": 0 }, "elapsed_ms": N, "error": "...", "error_type": "..." }
+```
+
+The array must contain exactly N items.
 
 ## Step 5: Return
 
