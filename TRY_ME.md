@@ -26,6 +26,10 @@ Generate multiple variations of something, then pick the best.
 
 > Use /jimmy-candidates with prompt: "Write an opening sentence for a technical blog post about why small language models (7-8B parameters) are underrated for developer tooling. Hook the reader immediately." and n: 10, max_iterations: 3. Pick the top 3 across all results.
 
+### Generate code scaffolding
+
+> Use /jimmy-candidates with prompt: "Generate a Rust struct for a user record with fields: id (u64), email (String), display_name (String), created_at (i64 Unix timestamp), is_active (bool). Include serde derive macros for Serialize and Deserialize." and n: 5, system: "Generate Rust code using serde and derive macros. Output only the struct definition — no impl blocks, no use statements, no explanatory text." Then pick the cleanest implementation and explain what you'd change.
+
 ---
 
 ## jimmy-validate
@@ -62,6 +66,10 @@ Rewrite text in multiple styles or adapt content for different audiences.
 
 > Use /jimmy-transform with input: "We're deprecating the v1 API on March 15. Please migrate to v2 before then." and instructions: ["rewrite in a warm, empathetic tone that acknowledges the inconvenience", "rewrite in a direct, no-nonsense enterprise tone", "rewrite in a casual, friendly startup tone", "rewrite in a formal legal notice style", "rewrite as an urgent warning with clear consequences of not migrating"]
 
+### Enforce output format with validation
+
+> Use /jimmy-transform with inputs: ["def add(a, b): return a + b", "fn multiply(x: i32, y: i32) -> i32 { x * y }", "const divide = (a, b) => a / b;"] and instruction: "Write a one-sentence docstring for this function. Start with a capital letter. End with a period." and validate: type "both", pattern "^[A-Z]", min_length: 10, max_length: 120, and max_retries: 2. Report any items that failed validation after all retries.
+
 ---
 
 ## jimmy-summarize
@@ -82,6 +90,96 @@ Fast summarization with optional multiple variants to compare.
 
 ---
 
+## jimmy-classify
+
+Classify text into a fixed set of categories via majority-vote ensemble. More reliable than a single call — N votes cancel out random model noise.
+
+### Label commit messages by type
+
+> Use /jimmy-classify with text: "fix: prevent null pointer exception when user record has no email address" and categories: ["bug fix", "feature", "chore", "refactor", "docs"] and n: 7. Report the classification, confidence score, and vote breakdown.
+
+### Route a support ticket
+
+> Use /jimmy-classify with text: "I was charged twice for my subscription this month. I have two identical line items on my credit card statement and need a refund for the duplicate charge." and categories: ["billing", "technical support", "account access", "feature request", "other"] and n: 9. Use the result to recommend which support queue should handle this ticket.
+
+### Sentiment check across a corpus
+
+> Use /jimmy-classify three times, once per review — text: "Best purchase I've made this year, works exactly as described", categories: ["positive", "negative", "neutral"], n: 7. Then text: "Arrived damaged and customer service was unhelpful", same categories, n: 7. Then text: "Decent product, does what it says, nothing special", same categories, n: 7. Tally the three results and report the overall sentiment distribution.
+
+---
+
+## jimmy-montecarlo
+
+Measure whether a prompt gives consistent results before you rely on it. Agreement rate tells you how reliable the 8B model is for a given task.
+
+### Gate a new classification prompt
+
+> Use /jimmy-montecarlo with prompt: "Classify this git commit as one of: bug fix, feature, chore, refactor, docs. Commit: fix: prevent null pointer exception when user record has no email address. Output only the category label." and n: 20 and threshold: 0.7. Report the verdict, agreement_rate, and top_response. If verdict is "unstable", suggest how to tighten the prompt.
+
+### Compare two prompt phrasings
+
+> Use /jimmy-montecarlo twice with n: 20 each. First run: prompt "Is this commit a bug fix? Answer yes or no only. Commit: fix null pointer in UserService when email is missing." Second run: prompt "Classify: bug fix or not a bug fix. Commit: fix null pointer in UserService when email is missing. Output the label only." Compare the agreement_rate from both runs and recommend which phrasing to use in production.
+
+### Regression-check a system prompt change
+
+> Run /jimmy-montecarlo with prompt: "Summarize this error in one sentence: TokenExpiredError at /api/v2/projects/create for user usr_4821, token expired 6 hours ago." and n: 15. Record the agreement_rate. Then run again with a modified system prompt. If the new agreement_rate drops more than 0.1 from the baseline, flag the system prompt change as a regression risk.
+
+---
+
+## jimmy-search
+
+Generate candidate solutions and test each against a shell oracle. Finds working solutions without reasoning — just generate, test, and pick the winner.
+
+### Find a regex that matches version strings
+
+> Use /jimmy-search with problem: "Write a regex that matches semantic version strings like 1.0.0, 2.13.4, and 10.0.1 but rejects 1.0, v1.0.0, and 1.0.0.0. Output only the regex pattern, no explanation." and test_cases: [{ "command": "echo '2.13.4' | grep -qE $CANDIDATE_FILE", "expected_exit": 0 }, { "command": "echo 'v1.0.0' | grep -qE $CANDIDATE_FILE", "expected_exit": 1 }] and n: 10 and type: "regex". Report all candidates with a perfect pass rate.
+
+### Find a shell one-liner to extract emails
+
+> Use /jimmy-search with problem: "Write a grep command that extracts all email addresses from a file passed as the first argument. Output only the email addresses, one per line. No flags other than what is needed." and test_cases: [{ "command": "echo 'Contact us at hello@example.com or support@test.org for help' > /tmp/test_emails.txt && bash $CANDIDATE_FILE /tmp/test_emails.txt | grep -q 'hello@example.com'", "expected_exit": 0 }] and n: 8 and type: "shell". Pick the simplest passing candidate.
+
+### Generate a passing SQL query
+
+> Use /jimmy-search with problem: "Write a SQL SELECT query that returns users who registered in the last 30 days and have a verified email. Table: users(id, email, email_verified, created_at). email_verified is a boolean column." and test_cases: [{ "command": "grep -qi 'SELECT' $CANDIDATE_FILE && grep -qi 'WHERE' $CANDIDATE_FILE && grep -qi 'email_verified' $CANDIDATE_FILE", "expected_exit": 0 }] and n: 6 and type: "sql". Report the top candidate and explain any issues with lower-scoring ones.
+
+---
+
+## jimmy-testdata
+
+Generate structured test fixtures from a schema. Great for seeding test databases and unit test setup without hand-writing JSON.
+
+### Seed a user table for tests
+
+> Use /jimmy-testdata with schema: { "id": "uuid", "username": "string", "email": "email", "age": "int", "active": "bool", "created_at": "date" } and n: 10. Report how many fixtures succeeded and insert the results into the test database seed file.
+
+### Generate product catalog fixtures
+
+> Use /jimmy-testdata with schema: { "sku": "string", "name": "string", "price": "float", "in_stock": "bool", "product_url": "url" } and n: 15. Use the fixtures as seed data for a product listing page integration test.
+
+### Edge-case coverage for a signup form
+
+> Use /jimmy-testdata with schema: { "username": "string", "email": "email", "age": "int", "active": "bool" } and n: 8 and edge_case: true. Review the generated fixtures and identify which input paths (empty strings, max integers, malformed emails) would expose validation gaps in the signup form handler.
+
+---
+
+## jimmy-fuzz
+
+Generate adversarial payload variants for manual security testing. All output is inert data — review before use, never execute automatically.
+
+### XSS payloads for a comment field
+
+> Use /jimmy-fuzz with attack_surface: "a comment input field that renders HTML in a user profile page" and attack_types: ["xss"] and n: 10. List the payloads and note which ones look highest risk based on the severity field. Do not execute any payload automatically.
+
+### Multi-category login form audit
+
+> Use /jimmy-fuzz with attack_surface: "a login form with username and password POST parameters" and attack_types: ["sqli", "xss", "command_injection"] and n: 5. Organize the results by severity (critical first, then high) and summarize which attack categories pose the greatest risk to this endpoint.
+
+### Path traversal coverage for a file download endpoint
+
+> Use /jimmy-fuzz with attack_surface: "a /download?file= query parameter that reads files from a server directory" and attack_types: ["path_traversal", "ssrf"] and n: 8. Flag any payloads that could be immediately testable in a browser by pasting directly into the URL bar, and note which ones would require a proxy tool like Burp Suite.
+
+---
+
 ## Tips for Getting Good Results
 
 1. **Be specific in your prompts.** "Write a tagline" produces filler. "Write a one-sentence tagline under 10 words for a CLI tool" produces usable output.
@@ -96,3 +194,4 @@ Fast summarization with optional multiple variants to compare.
 
 6. **Validate results need Claude.** The validate skill parses YES/NO reliably (100% parse rate), but the 8B model only gets ~40-60% of nuanced technical questions right. Use it for cheap pre-screening, then have Claude review the flagged items.
 
+7. **Match the skill to the pattern.** The v1.2 skills cover three patterns: *aggregation* (jimmy-classify, jimmy-montecarlo — run many and tally), *oracle search* (jimmy-search — generate and test), and *adversarial data* (jimmy-fuzz, jimmy-testdata — generate structured content). Pick the pattern first, then the skill.

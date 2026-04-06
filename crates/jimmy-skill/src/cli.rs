@@ -20,11 +20,11 @@ pub struct Cli {
     pub parallel: bool,
 
     /// Max simultaneous HTTP requests (parallel mode only)
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 100)]
     pub max_concurrent: usize,
 
     /// Times each prompt is sent to Jimmy (parallel mode only; min 1)
-    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
+    #[arg(long, default_value_t = 25, value_parser = clap::value_parser!(u64).range(1..))]
     pub max_iterations: u64,
 }
 

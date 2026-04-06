@@ -47,10 +47,17 @@ Check in this order:
    - If `instruction` is an empty string: output `{"error": "instruction is required and cannot be empty", "error_type": "usage"}` and stop.
    - Set N = len(inputs). Mode confirmed: many-to-one.
 6. Neither valid combo present: output `{"error": "provide input+instructions (one-to-many) or inputs+instruction (many-to-one)", "error_type": "usage"}` and stop.
+7. If `validate` is provided, check it is a valid object with a `type` field:
+   - If `type` is `"pattern"`: `pattern` field must be a non-empty string. If missing or empty, output `{"error": "validate.pattern is required when type is \"pattern\"", "error_type": "usage"}` and stop.
+   - If `type` is `"length"`: at least one of `min_length` or `max_length` must be present as a non-negative integer. If neither is present, output `{"error": "validate.type \"length\" requires min_length, max_length, or both", "error_type": "usage"}` and stop.
+   - If `type` is `"both"`: `pattern` must be a non-empty string AND at least one of `min_length`/`max_length` must be present. If either is missing, output the applicable error from the rules above and stop.
+   - If `type` is any other value, output `{"error": "validate.type must be \"pattern\", \"length\", or \"both\"", "error_type": "usage"}` and stop.
+8. If `max_retries` is provided and is less than 0, output `{"error": "max_retries must be >= 0", "error_type": "usage"}` and stop.
+   - If `validate` is absent, `max_retries` is accepted but ignored.
 
 Output these error responses as bare JSON with no markdown fences and stop immediately — no Bash calls.
 
-After validation: state clearly whether mode is one-to-many or many-to-one and what N is.
+After validation: state clearly whether mode is one-to-many or many-to-one, what N is, whether validate is active (and if so, its type), and what max_retries is (default 2 if validate is present and max_retries was not provided).
 
 ## Step 2: Construct the JSON array and call jimmy-skill --parallel
 
@@ -109,6 +116,42 @@ Wait for the single Bash call to complete. The stdout is a JSON array. Parse it.
 Extract the transform result for item at index I:
 - `parallel_output[I].results[0].response` — this is the raw transform text (do NOT parse it, do NOT strip prefixes — accept as-is)
 - If `parallel_output[I].results[0].response` is null: treat it as a failed transform using `parallel_output[I].results[0].error` and `parallel_output[I].results[0].error_type`
+
+## Step 3a: Apply validation and retry (only if `validate` is provided)
+
+Skip this step entirely if `validate` was not provided.
+
+For each index I (0-based) where `parallel_output[I].results[0].response` is NOT null (i.e., Jimmy returned a result):
+
+**Check the result against the validate object:**
+
+- `type: "pattern"`: Apply `re.search(validate.pattern, result)` (or equivalent regex match). If no match, the item fails validation.
+- `type: "length"`: Check `len(result) >= validate.min_length` (if min_length present) AND `len(result) <= validate.max_length` (if max_length present). If either bound fails, the item fails validation.
+- `type: "both"`: Apply the pattern check AND the length check. Both must pass. If either fails, the item fails validation.
+
+**If the item passes validation:** Accept the result. No further action for this item.
+
+**If the item fails validation:** Retry by issuing a new Bash call for ONLY this item:
+
+```bash
+jimmy-skill --max-iterations 1 << 'JIMMY_INPUT'
+{"prompt": "ITEM_I_USER_MSG", "system": "MERGED_SYSTEM"}
+JIMMY_INPUT
+```
+
+(This is a single-item call, not --parallel. Use the same user_message and system_prompt constructed in Step 2 for this item's index.)
+
+Re-check the retry result against validate. Repeat until either:
+- The result passes validation → accept the passing result, continue to Step 4.
+- All `max_retries` attempts are exhausted without a passing result → mark the item with the validation failure. Store: `result = null`, `error_type = "validation"`, `error = "validation failed: {reason}"` where reason is a short description matching the failure type (e.g., `"output did not match pattern ^[A-Z]"`, `"output length 5 is below min_length 10"`, `"output did not match pattern ^[A-Z] and length 5 is below min_length 10"`).
+- The retry jimmy-skill call exits non-zero (binary error, exit code 1/2/3) → treat the item as a binary-level failure: set `result = null`, `error_type` to the appropriate type (`"network"`, `"api"`, or `"timeout"` based on exit code), `error` to the jimmy-skill stderr message if available. Skip further retries for this item.
+
+**Important:**
+- Retries are per-item and silent — do not output retry attempts or counts.
+- `max_retries` is the number of ADDITIONAL attempts after the first failure (default 2 means up to 3 total Jimmy calls per item: 1 original + 2 retries).
+- Items that originally returned null from Jimmy (network/timeout/api/parse errors) are NOT retried here — they stay failed with their original error.
+- Items that pass validation on the original response are NOT retried.
+- Issue retry Bash calls sequentially (one at a time per failing item) — do NOT issue multiple retries for different items in parallel in a single Bash call.
 
 ## Step 4: Assemble output array
 

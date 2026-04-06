@@ -44,3 +44,47 @@ JSON array of N items. Each item is assembled from the binary's parallel output 
 Per-item failures set `response: null`, `error`, and `error_type` without affecting other items. Array always has exactly N items.
 
 `error_type` values: `"timeout"`, `"network"`, `"api"`, `"parse"`, `"usage"`.
+
+## Scaffolding use cases
+
+Use jimmy-candidates to generate code scaffolding in bulk. Pass a concrete signature, name, or spec as the prompt; use `system` for language and framework context.
+
+**Struct / type definitions** (Rust structs, TypeScript interfaces, Python dataclasses):
+
+```json
+{
+  "prompt": "Generate a Rust struct for a user record with fields: id (u64), email (String), display_name (String), created_at (i64 Unix timestamp), is_active (bool). Include serde derive macros for Serialize and Deserialize.",
+  "n": 5,
+  "system": "Generate Rust code using serde and derive macros. Output only the struct definition — no impl blocks, no use statements, no explanatory text."
+}
+```
+
+**Test stubs** (unit test boilerplate, describe blocks, fixture setups):
+
+```json
+{
+  "prompt": "Write a Jest describe block for a function called `validateEmail` that accepts a string and returns a boolean. Include test cases for: valid email, missing @ symbol, empty string, whitespace-only string, email with no domain.",
+  "n": 4,
+  "system": "Generate TypeScript Jest tests using describe/it/expect. Output only the describe block — no imports, no module.exports."
+}
+```
+
+**Docstrings / JSDoc** (function-level documentation from a signature):
+
+```json
+{
+  "prompt": "Write a JSDoc comment for this function signature: `async function fetchUserById(id: string, options?: { includeDeleted?: boolean }): Promise<User | null>`",
+  "n": 6,
+  "system": "Generate JSDoc comments only. Include @param tags for all parameters, @returns tag, and a one-sentence description. No implementation code."
+}
+```
+
+**Impl / method stubs** (method body scaffolding, placeholder returns, TODO comments):
+
+```json
+{
+  "prompt": "Generate a stub implementation for this Rust trait method: `fn validate(&self, input: &str) -> Result<(), ValidationError>`. Include a TODO comment and return a placeholder Err.",
+  "n": 5,
+  "system": "Generate Rust code only. Output only the method body inside curly braces — assume the trait and ValidationError type are already defined. Use `todo!()` macro or an explicit Err return."
+}
+```

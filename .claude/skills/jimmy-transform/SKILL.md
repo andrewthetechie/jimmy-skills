@@ -29,6 +29,25 @@ Not suited for: creative generation from scratch (use jimmy-candidates), multi-s
 | `system`       | no           | Optional system prompt for shared context (style guide, constraints). Merged with skill default. Keep short — put reference material in the text content, not the system prompt. |
 | `max_concurrent` | no         | Maximum simultaneous HTTP requests. Default: 10. |
 | `max_iterations` | no         | How many times each transform is sent to Jimmy. Default: 1. Useful if you want multiple transform variants per item — only results[0] is used in the default output shape. |
+| `validate`       | no           | Optional structural validation applied to each transform result before accepting it. Object with `type` field: `"pattern"` (regex match against full result text), `"length"` (character count bounds), or `"both"` (pattern AND length, both must pass). See validation object shapes below. |
+| `max_retries`    | no           | Maximum retry attempts per item when `validate` is provided and the result fails validation. Default: 2. Each retry is a full new Jimmy request for only the failing item. Ignored if `validate` is absent. |
+
+### Validation object shapes
+
+```json
+{ "type": "pattern", "pattern": "^[A-Z]" }
+```
+Checks that the result matches the regex pattern. Pattern is tested against the full result string.
+
+```json
+{ "type": "length", "min_length": 10, "max_length": 200 }
+```
+Checks that `len(result) >= min_length` and `len(result) <= max_length`. Omit `min_length` or `max_length` to leave that bound unchecked.
+
+```json
+{ "type": "both", "pattern": "^[A-Z]", "min_length": 10 }
+```
+Both pattern match AND length bound must pass. Either failure triggers a retry.
 
 ## Output
 
@@ -59,6 +78,52 @@ Output is a bare JSON array — no wrapper object. Array always has exactly N it
 
 Per-item failures set `result: null`, `error`, and `error_type` without affecting other items.
 
-`error_type` values: `"timeout"`, `"network"`, `"api"`, `"parse"`, `"usage"`
+`error_type` values: `"timeout"`, `"network"`, `"api"`, `"parse"`, `"usage"`, `"validation"`
+
+When `validate` is provided: a result that fails validation after all retries produces `result: null`, `error_type: "validation"`, `error: "validation failed: ..."`. Shape is identical to other per-item failures.
 
 **Note on the `system` param:** The `system` param is for style instructions only — keep it short. Put reference material (e.g., glossaries, brand voice guides) in the input text, not the system prompt, to avoid hitting Jimmy's 28K system prompt cap.
+
+## Bulk-transform examples
+
+Apply one instruction to many inputs (many-to-one mode):
+
+```json
+{
+  "inputs": [
+    "Our system encountered an unexpected condition.",
+    "The operation could not be completed.",
+    "Input validation did not succeed."
+  ],
+  "instruction": "Rewrite as a short, user-friendly error message in plain English. One sentence. No technical jargon.",
+  "system": "You write error messages for a consumer mobile app."
+}
+```
+
+Apply many instructions to one input (one-to-many mode):
+
+```json
+{
+  "input": "The transformer model uses self-attention mechanisms to compute contextual embeddings across the input sequence.",
+  "instructions": [
+    "Rewrite for a non-technical executive audience in one sentence.",
+    "Rewrite as a tweet (max 280 characters, casual tone).",
+    "Rewrite as a definition for a technical glossary."
+  ]
+}
+```
+
+Apply one instruction to many inputs with output validation (many-to-one + validate):
+
+```json
+{
+  "inputs": [
+    "def add(a, b): return a + b",
+    "fn multiply(x: i32, y: i32) -> i32 { x * y }",
+    "const divide = (a, b) => a / b;"
+  ],
+  "instruction": "Write a one-sentence docstring for this function. Start with a capital letter. End with a period.",
+  "validate": { "type": "both", "pattern": "^[A-Z]", "min_length": 10, "max_length": 120 },
+  "max_retries": 2
+}
+```
