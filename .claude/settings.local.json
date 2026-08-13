@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Skill(gsd:discuss-phase)",
-      "Skill(gsd:add-phase)",
-      "Skill(gsd:complete-milestone)"
-    ]
-  }
-}
