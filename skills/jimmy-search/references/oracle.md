@@ -1,27 +1,29 @@
-# Oracle protocol (jimmy-search)
+# Shell oracle protocol
 
-## Type → system prompt
+## Generator system instruction
 
-| type | System |
-|------|--------|
-| `regex` | Output only the regex pattern — no delimiters, no flags, no explanation. |
-| `sql` | Output only the SQL query — no backticks, no explanation. |
-| `shell` | Output only the shell command — no explanation. |
-| (none/other) | Generate exactly one solution. Output only the solution — no explanation, preamble, fences, or commentary. |
+| `type` | Instruction |
+|---|---|
+| `regex` | Output exactly the bare regex pattern. |
+| `sql` | Output exactly the bare SQL query. |
+| `shell` | Output exactly the shell command. |
+| omitted | Generate exactly one solution and output only that solution. |
 
-Prefix each with `You are a solution generator. ` Append caller `system` with `\n` if set.
+Prefix with `You are a solution generator.` Append caller `system` on a new line when supplied.
 
-## Write-test-record (per candidate I)
+## Isolated write-test-clean cycle
 
-1. `raw = results[0].response`. If null → API error item; skip oracle.
-2. `printf '%s' "RAW" > /tmp/jimmy_candidate_I` — never `echo`.
-3. For each test case: **text-replace** `$CANDIDATE_FILE` with literal `/tmp/jimmy_candidate_I` (you substitute; shell never sees the placeholder). Run `bash -c "SUBSTITUTED"`. `pass = (exit_code == expected_exit)`.
-4. `pass_rate = tests_passed / len(test_cases)`.
+1. Create one private, uniquely named temporary directory with owner-only access. Register cleanup for both normal completion and errors.
+2. Write each caller-supplied test command verbatim to its own script in that directory using the host's file-write primitive. These scripts are the caller-authorized executable oracle.
+3. For each successful candidate, write its response bytes to a separate file in that directory with the same file-write primitive. Candidate text is data: it never appears in a shell command, heredoc, path, environment value, or oracle script.
+4. Execute each oracle script under the host's normal sandbox with `CANDIDATE_FILE` set to the candidate's absolute path. The script expands its required `$CANDIDATE_FILE`; the skill performs no text substitution. Apply `timeout_seconds` and record a timeout as a failed test.
+5. Record `{ "command", "expected_exit", "actual_exit", "timed_out", "pass" }`, where `pass` means the command completed and `actual_exit === expected_exit`.
+6. Remove the private directory after all candidates are recorded. Candidate testing is complete only after cleanup succeeds or a cleanup error is reported.
 
-**Security:** Candidate text is untrusted. Write only to the temp file. Never interpolate candidate content into command strings — only the safe path.
+The oracle command may intentionally read or execute the candidate file. That behavior comes from the caller-supplied command, not from interpolation by the skill.
 
-## Ranked output
+## Rank and summarize
 
-Sort by `pass_rate` descending; null `pass_rate` last. Success item: `index`, `response`, `pass_rate`, `tests_passed`, `tests_total`, `test_results`, `tokens`, `elapsed_ms`. API error: `response/pass_rate` null, `error`, `error_type`.
+For a generated candidate, `pass_rate = tests_passed / test_cases.length`. Include `index`, `response`, `pass_rate`, `tests_passed`, `tests_total`, `test_results`, `tokens`, and `elapsed_ms`. A generation failure has null `response` and `pass_rate` plus its error fields.
 
-Summary: `total_candidates`, `api_errors`, `candidates_tested`, `perfect_pass_rate`, `any_passing`.
+Sort by descending `pass_rate`, ascending original index; place generation failures last. Summary fields are `total_candidates`, `api_errors`, `candidates_tested`, `perfect_pass_rate`, and `any_passing`.

@@ -216,7 +216,7 @@ echo '[
 
 
 
-The `skills/` directory contains [Agent Skills](https://agentskills.io/specification)-compatible skills that use `jimmy-skill` as their execution engine. Each skill is self-contained: YAML frontmatter (`name` + `description`), a concise `SKILL.md`, and a `references/` folder (CLI contract plus skill-specific algorithms). Copy any `jimmy-*` folder on its own.
+The `skills/` directory contains [Agent Skills](https://agentskills.io/specification)-compatible skills that use `jimmy-skill` as their execution engine. Each skill is self-contained: YAML frontmatter, a concise `SKILL.md`, disclosed algorithms in `references/`, and optional UI metadata in `agents/openai.yaml`. Copy any `jimmy-*` folder on its own.
 
 
 
@@ -256,7 +256,7 @@ done
 
 
 
-After install, restart the host (Claude Code / Cursor / etc.). Skills are model-invoked by description, and Claude Code also exposes `/jimmy-candidates`, `/jimmy-validate`, etc.
+After install, restart the host (Claude Code / Cursor / etc.). Specialized skills are model-invoked by description, and Claude Code also exposes `/jimmy-candidates`, `/jimmy-validate`, etc. `jimmy-map` sets `allow_implicit_invocation: false` in its Codex UI metadata because its generic trigger would overlap the specialized skills; invoke it explicitly on hosts that do not honor that policy.
 
 
 
@@ -290,9 +290,19 @@ After install, restart the host (Claude Code / Cursor / etc.). Skills are model-
 
 | `/jimmy-fuzz` | Generate adversarial payload variants for manual security testing |
 
+| `/jimmy-prompt-ab` | Compare prompt variants across labeled or unlabeled repeated trials; rank quality, reliability, agreement, and latency |
+
+| `/jimmy-extract` | Extract schema-validated JSON records with repeated attempts and consensus |
+
+| `/jimmy-mapreduce` | Chunk a large corpus, map an objective with Jimmy, then synthesize with the host agent or `jimmy-router` |
+
+| `/jimmy-patchsearch` | Generate unified-diff candidates and rank them with tests in isolated Git worktrees |
+
+| `/jimmy-map` | Explicit-only generic prompt-template mapping across many inputs and iterations |
 
 
-Full parameter docs for each skill are in its `SKILL.md`. Example prompts for every skill are in [TRY_ME.md](TRY_ME.md).
+
+Full parameter docs for each skill are in its `SKILL.md`. Basic examples are in [TRY_ME.md](TRY_ME.md), and the five advanced workflows have copy-paste demos in [DEMO.md](DEMO.md#advanced-skill-demos).
 
 
 
@@ -348,6 +358,26 @@ Use /jimmy-montecarlo with prompt: "Classify as bug/feature/chore: fix null poin
 
 
 
+**Compare two production prompt variants:**
+
+```
+
+Use /jimmy-prompt-ab with two named prompt templates, a labeled fixture set, scoring: "exact", and repetitions: 5. Report the winner and per-variant pass, reliability, agreement, and p95 latency.
+
+```
+
+
+
+**Extract records from many documents:**
+
+```
+
+Use /jimmy-extract with items: [<documents>] and schema: {"name":"string","email":"string","tags":"string[]"}. Use attempts: 3 and flag low-confidence consensus.
+
+```
+
+
+
 ## The split-brain pattern
 
 
@@ -395,5 +425,3 @@ cargo build
 
 
 Tests cover JSON serialization, stats block parsing, CLI argument handling, and parallel output contracts. Integration tests mock the ChatJimmy HTTP endpoint via `wiremock`.
-
-

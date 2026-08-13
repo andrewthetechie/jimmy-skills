@@ -1,39 +1,30 @@
 ---
 name: jimmy-classify
-description: Use when you need fast cheap single-label text classification, ensemble majority vote across categories, commit/content tagging, or sentiment routing with a confidence score.
+description: Classify text into exactly one supplied category with a Jimmy ensemble vote. Use for cheap routing or tagging among semantically distinct labels.
 ---
 
-# jimmy-classify
+# Jimmy classify
 
-N ensemble votes with **prompt template variation**, then majority-vote winner + confidence.
+Vary the classification prompt across `n` calls, then return the majority label and confidence.
 
-**REQUIRED:** [jimmy-cli](references/jimmy-cli.md). Templates + voting: [vote](references/vote.md).
-
-## Not for
-
-Multi-label classification, categories with no semantic distinction, deep reasoning.
+Read [the Jimmy CLI contract](references/jimmy-cli.md) before the first call. Use [the voting protocol](references/vote.md) to build prompts and tally responses.
 
 ## Inputs
 
-| Param | Required | Default | Notes |
-|-------|----------|---------|-------|
-| `text` | yes | — | Classified text (user message) |
-| `categories` | yes | — | Label strings (multi-word OK) |
-| `n` | yes | — | Votes (min 3; ~7 recommended) |
-| `system` | no | — | Role line appended to classifier system |
-| `max_concurrent` | no | 100 | Run all votes in parallel |
+| Parameter | Required | Default | Contract |
+|---|---:|---:|---|
+| `text` | yes | — | Non-empty string |
+| `categories` | yes | — | At least two non-empty, normalization-distinct labels |
+| `n` | yes | — | Integer at least 3; 7 is a useful baseline |
+| `system` | no | — | Appended to the classifier system instruction |
+| `max_concurrent` | no | 100 | Positive integer |
 
-## Steps
+Use a stronger model for multi-label or reasoning-heavy decisions.
 
-1. **Validate** — empty text/categories, `n < 3` → usage error. Stop.
-2. **Build N items** — cycle 7 templates from [vote](references/vote.md); **do not** use `--max-iterations` for diversity (that repeats the identical prompt). Default system: `You are a text classifier. Be concise.` Append caller `system` if set.
-3. **Call once** with `--max-iterations 1` explicitly:
+## Process
 
-```bash
-jimmy-skill --parallel --max-concurrent MAX --max-iterations 1 << 'JIMMY_INPUT'
-[{"prompt":"TPL","system":"MERGED"}, ...]
-JIMMY_INPUT
-```
-
-4. **Extract + vote** — [vote](references/vote.md).
-5. **Return** — bare JSON object only (`classification`, `confidence`, `votes`, `total_votes`, `raw_responses`, optional `errors`).
+1. **Validate.** Enforce every input contract, including category uniqueness after the normalization in the voting protocol. Return a bare `usage` error object and stop on the first invalid input. Validation is complete when every vote has at least two unambiguous labels to choose from.
+2. **Diversify.** Build exactly `n` items by cycling the seven prompt templates. Use `You are a text classifier. Be concise.` as the base system instruction and append caller `system` on a new line when supplied.
+3. **Batch.** JSON-serialize the items and invoke parallel mode once with `--max-concurrent MAX_CONCURRENT --max-iterations 1`. The call is complete when the CLI returns one ordered item per vote.
+4. **Vote.** Extract and tally every response using the voting protocol; retain null/parse failures in `errors` and `raw_responses`.
+5. **Return.** Emit only `{ "classification", "confidence", "votes", "total_votes", "raw_responses", "errors"? }`. Completion requires `total_votes + errors.length = n`.

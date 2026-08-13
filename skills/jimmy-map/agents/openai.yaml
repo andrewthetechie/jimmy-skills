@@ -1,0 +1,7 @@
+interface:
+  display_name: "Jimmy Map"
+  short_description: "Run explicit generic parallel Jimmy mapping"
+  default_prompt: "Use $jimmy-map to apply this prompt template across the supplied inputs."
+
+policy:
+  allow_implicit_invocation: false

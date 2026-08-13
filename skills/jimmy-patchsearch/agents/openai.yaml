@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jimmy Patch Search"
+  short_description: "Generate and test isolated patch candidates"
+  default_prompt: "Use $jimmy-patchsearch to generate patch candidates for this bug and rank them with the test suite."

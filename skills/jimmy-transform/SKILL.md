@@ -1,43 +1,31 @@
 ---
 name: jimmy-transform
-description: Use when you need parallel tone or format rewrites, one text with many instructions, one instruction across many texts, or batch style edits with optional structural validation retries.
+description: Transform text in parallel with Jimmy, either one input across many instructions or many inputs under one instruction, with optional regex or length enforcement.
 ---
 
-# jimmy-transform
+# Jimmy transform
 
-Rewrite text in parallel: **one-to-many** (`input` + `instructions[]`) or **many-to-one** (`inputs[]` + `instruction`).
+Transform text in one of two modes:
 
-**REQUIRED:** [jimmy-cli](references/jimmy-cli.md). Validation retries: [validate-retry](references/validate-retry.md).
+- **one-to-many:** `input` + `instructions[]`
+- **many-to-one:** `inputs[]` + `instruction`
 
-## Not for
-
-Creative generation from scratch (use jimmy-candidates) or multi-step analysis.
+Read [the Jimmy CLI contract](references/jimmy-cli.md) before the first call. When `validate` is present, follow [the validation and retry protocol](references/validate-retry.md).
 
 ## Inputs
 
-| Param | Mode | Notes |
-|-------|------|-------|
-| `input` + `instructions` | one-to-many | One text, N instructions |
-| `inputs` + `instruction` | many-to-one | N texts, one instruction |
-| `system` | optional | Appended to writer role |
-| `max_concurrent` | optional, default 10 | |
-| `max_iterations` | optional, default 1 | Only `results[0]` used in output |
-| `validate` | optional | `pattern` / `length` / `both` — see reference |
-| `max_retries` | optional, default 2 | Only when `validate` set |
+| Parameter | Required | Default | Contract |
+|---|---:|---:|---|
+| mode pair | yes | — | Exactly one complete pair above; every string and array is non-empty |
+| `system` | no | — | Appended to the writer system instruction |
+| `max_concurrent` | no | 10 | Positive integer |
+| `validate` | no | — | `pattern`, `length`, or `both`; see the retry protocol |
+| `max_retries` | no | 2 | Non-negative integer; used only with `validate` |
 
-Mutually exclusive mode pairs — never mix both modes.
+## Process
 
-## Steps
-
-1. **Validate mode** — exact error strings from prior skill behavior: wrong combo / empty fields → bare usage JSON. Stop.
-2. **Build N user messages** — `"{instr}\n\nText to transform:\n{text}\n\nTransformed text:"`. System default: `You are a skilled writer. Follow the transformation instruction precisely.` Append caller `system` if set.
-3. **Call once** with explicit `--max-iterations`:
-
-```bash
-jimmy-skill --parallel --max-concurrent MAX --max-iterations MAX_IT << 'JIMMY_INPUT'
-[{"prompt":"...","system":"MERGED"}, ...]
-JIMMY_INPUT
-```
-
-4. **Optional validate/retry** — [validate-retry](references/validate-retry.md).
-5. **Return** — bare JSON array length N. Each item: `{ index, input, instruction, result, tokens, elapsed_ms }` or failure with `result: null`, `error`, `error_type`. No summary object. No fences.
+1. **Validate.** Accept exactly one complete mode pair and enforce every input contract. Validate the optional constraint before any call. Return a bare `usage` error object naming the invalid field and stop on the first failure. Validation is complete when mode and output cardinality `n` are unambiguous.
+2. **Prompt.** For each index, build `INSTRUCTION\n\nText to transform:\nINPUT\n\nTransformed text:`. Start the system instruction with `You are a skilled writer. Follow the transformation instruction precisely.` and append caller `system` on a new line.
+3. **Batch.** JSON-serialize exactly `n` items and invoke parallel mode once with `--max-concurrent MAX_CONCURRENT --max-iterations 1`.
+4. **Enforce.** When configured, validate and retry failed constraints with the retry protocol. Preserve original API failures without retrying them.
+5. **Return.** Emit only an array of `{ "index", "input", "instruction", "result", "tokens", "elapsed_ms" }` successes or equivalent failures with `result: null`, `error`, and `error_type`. Completion requires exactly `n` items in original order.

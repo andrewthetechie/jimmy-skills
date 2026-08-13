@@ -1,31 +1,28 @@
 ---
 name: jimmy-testdata
-description: Use when you need synthetic JSON fixtures from a field schema, parallel test data generation, database seed objects, or edge-case boundary values for stress testing.
+description: Generate independent JSON test fixtures from a flat field schema with Jimmy, including boundary-value fixtures.
 ---
 
-# jimmy-testdata
+# Jimmy test data
 
-Generate **N** JSON fixtures matching a schema (one Jimmy call per fixture).
+Generate `n` independent JSON objects, then parse and validate each against the requested flat schema.
 
-**REQUIRED:** [jimmy-cli](references/jimmy-cli.md). Prompts + parse: [fixtures](references/fixtures.md).
-
-## Not for
-
-Relational FK consistency, deeply nested schemas (>~10 fields), or hand-specified exact values.
+Read [the Jimmy CLI contract](references/jimmy-cli.md) before the first call. Use [the fixture protocol](references/fixtures.md) for prompting, schema checks, and output shaping.
 
 ## Inputs
 
-| Param | Required | Default | Notes |
-|-------|----------|---------|-------|
-| `schema` | yes | — | `{ field: type }` — types: string, int, float, bool, email, url, date, uuid |
-| `n` | yes | — | Fixture count |
-| `edge_case` | no | false | Boundary/adversarial values |
-| `max_concurrent` | no | 10 | |
+| Parameter | Required | Default | Contract |
+|---|---:|---:|---|
+| `schema` | yes | — | Non-empty `{ field: type }` object with non-empty field names |
+| `n` | yes | — | Positive fixture count |
+| `edge_case` | no | false | Ask for boundary or malformed values while preserving JSON types |
+| `max_concurrent` | no | 10 | Positive integer |
 
-## Steps
+Supported types are `string`, `int`, `float`, `bool`, `email`, `url`, `date`, and `uuid`. Each fixture is independent; the invoking agent verifies relationships between objects.
 
-1. **Validate** — empty schema / unsupported type / bad `n` → usage error. Stop.
-2. **Build prompts** — [fixtures](references/fixtures.md). **Never** batch multiple fixtures into one prompt — N items in the array.
-3. **Call once** — N identical items; `--max-iterations 1` explicitly.
-4. **Parse** — trim; parse JSON object; no retry on parse fail.
-5. **Return** — bare JSON `{ "fixtures": [...], "summary": { "total", "succeeded", "failed" } }` only.
+## Process
+
+1. **Validate.** Enforce every input contract and reject unsupported types with a bare `usage` error object. Stop before calling Jimmy.
+2. **Batch.** Build one prompt per fixture using the fixture protocol. JSON-serialize exactly `n` items and invoke parallel mode once with `--max-concurrent MAX_CONCURRENT --max-iterations 1`.
+3. **Verify.** Parse and schema-check every response using the fixture protocol. Preserve raw text and record parse/schema failures as final.
+4. **Return.** Emit only `{ "fixtures", "summary" }`. Completion requires `fixtures.length = n` and `summary.succeeded + summary.failed = n`.

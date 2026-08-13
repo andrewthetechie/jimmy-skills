@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jimmy Extract"
+  short_description: "Extract validated JSON from many inputs"
+  default_prompt: "Use $jimmy-extract to extract validated structured fields from these documents."

@@ -1,24 +1,22 @@
-# Boolean parse (jimmy-validate)
+# Boolean response protocol
 
-For each index `I`, `raw = parallel_output[I].results[0].response`.
+For question index `i`, read `parallel_output[i].results[0]`.
 
-If `raw` is null → error item: `pass: null`, `error` from CLI, `error_type` from CLI, `raw: null`.
+An API failure becomes `{ "index", "question", "pass": null, "error", "error_type", "raw": null }`.
 
-## Two-pass parse
+## Parse a successful response
 
-**Pass 1 — prefix:** strip leading whitespace. If starts with YES/TRUE/NO/FALSE (case-insensitive): set `pass` (YES/TRUE→true, NO/FALSE→false), `explanation` = trim(text after token).
+Recognize ASCII case-insensitive `YES`, `TRUE`, `NO`, or `FALSE` only as whole words (not adjacent to a letter, digit, or underscore). Map `YES`/`TRUE` to true and `NO`/`FALSE` to false. Reject `1`, `0`, and synonyms.
 
-**Pass 2 — scan:** first 50 chars; first whole-word YES/TRUE/NO/FALSE. Same mapping. No match → parse error item.
+1. Trim leading whitespace. If a recognized token starts at position zero, use it.
+2. Otherwise inspect the first 50 characters and use the recognized token with the earliest start position.
+3. If no token matches, emit a parse failure.
 
-Reject bare `1`/`0` and other tokens.
+For a match, `explanation` is the trimmed text after the token and `raw` is the complete unmodified response.
 
-## Item shapes
+## Shape and reconcile
 
-Success: `{ "index", "question", "pass", "explanation", "raw" }`  
-Parse fail: `{ "index", "question", "pass": null, "error": "Could not parse YES/NO from response", "error_type": "parse", "raw" }`
+- Success: `{ "index", "question", "pass", "explanation", "raw" }`
+- Parse failure: `{ "index", "question", "pass": null, "error": "Could not parse YES/NO from response", "error_type": "parse", "raw" }`
 
-`question` is the plain question string. Results length must equal N.
-
-## Summary
-
-`total=N`, `passed`/`failed`/`errors` = counts where `pass` is true / false / null.
+The plain question string is used even when its input was an object. Summary counts true, false, and null as `passed`, `failed`, and `errors`; parsing is complete when those counts sum to the input length.

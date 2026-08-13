@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jimmy MapReduce"
+  short_description: "Map corpus chunks and synthesize results"
+  default_prompt: "Use $jimmy-mapreduce to summarize this document collection and synthesize the recurring themes."

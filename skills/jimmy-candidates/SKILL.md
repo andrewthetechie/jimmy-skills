@@ -1,45 +1,28 @@
 ---
 name: jimmy-candidates
-description: Use when you need multiple wording or draft candidates from a fast cheap LLM, parallel variations of one prompt, scaffolding options to pick from, or bulk generation before spending Claude tokens on volume.
+description: Generate independent draft candidates with Jimmy when one prompt benefits from many cheap responses that a stronger model will select or refine.
 ---
 
-# jimmy-candidates
+# Jimmy candidates
 
-Generate **N** candidate responses via `jimmy-skill`. You pick/refine; Jimmy supplies volume.
+Fan out one prompt into `n` independent drafts. Jimmy supplies volume; the invoking agent owns judgment and final selection.
 
-**REQUIRED:** Read [jimmy-cli](references/jimmy-cli.md) for invocation rules.
-
-## Not for
-
-Long reasoning, tool use, precise instruction-following, or Claude-level judgment.
+Read [the Jimmy CLI contract](references/jimmy-cli.md) before the first call.
 
 ## Inputs
 
-| Param | Required | Default | Notes |
-|-------|----------|---------|-------|
-| `prompt` | yes | — | Same prompt for every candidate |
-| `n` | yes | — | Candidates (≥1; practical max ~20) |
-| `system` | no | — | Shared `--system` |
-| `max_concurrent` | no | 10 | Cap simultaneous HTTP |
-| `max_iterations` | no | 1 | Prefer raising `n`; leave at 1 unless you want nested results |
+| Parameter | Required | Default | Contract |
+|---|---:|---:|---|
+| `prompt` | yes | — | Non-empty string sent to every item |
+| `n` | yes | — | Positive integer; practical maximum about 20 |
+| `system` | no | — | Shared system instruction |
+| `max_concurrent` | no | 10 | Positive integer |
 
-## Steps
+## Process
 
-1. **Validate** — empty `prompt` → `{"error":"prompt is required","error_type":"usage"}`. Non-positive `n` / `max_concurrent` / `max_iterations` → matching usage error. Stop.
-2. **Call once** — N identical JSON items; pass `--max-iterations` explicitly (CLI default is 25):
-
-```bash
-jimmy-skill --parallel --max-concurrent MAX_CONCURRENT --max-iterations MAX_ITERATIONS [--system "SYSTEM"] << 'JIMMY_INPUT'
-[{"prompt":"PROMPT"},{"prompt":"PROMPT"}]
-JIMMY_INPUT
-```
-
-3. **Reshape** — for each item `I`, take `results[0]` into:
+1. **Validate.** Reject an empty `prompt`, `n < 1`, or `max_concurrent < 1` with a bare `usage` error object. Stop before calling Jimmy. Validation is complete when all four inputs satisfy the table.
+2. **Batch.** JSON-serialize exactly `n` items containing the same `prompt` and optional `system`. Invoke parallel mode once with `--max-concurrent MAX_CONCURRENT --max-iterations 1`. The call is complete when the CLI returns an array that satisfies its contract.
+3. **Shape.** Map each `items[i].results[0]` to:
    - success: `{ "index", "response", "tokens", "elapsed_ms" }`
-   - failure: same + `"response": null`, `error`, `error_type`
-   Array length must equal `n`.
-4. **Return** — bare JSON array only (no markdown fences, no commentary).
-
-## Example
-
-`prompt`: "Write a one-sentence error for an invalid file path", `n`: 5 → five flat candidate objects.
+   - failure: the same fields with `"response": null`, plus `error` and `error_type`
+4. **Return.** Emit only the JSON array. Completion requires exactly `n` output items in input order, including failures.

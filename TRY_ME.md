@@ -24,7 +24,7 @@ Generate multiple variations of something, then pick the best.
 
 ### Draft opening lines for a blog post
 
-> Use /jimmy-candidates with prompt: "Write an opening sentence for a technical blog post about why small language models (7-8B parameters) are underrated for developer tooling. Hook the reader immediately." and n: 10, max_iterations: 3. Pick the top 3 across all results.
+> Use /jimmy-candidates with prompt: "Write an opening sentence for a technical blog post about why small language models (7-8B parameters) are underrated for developer tooling. Hook the reader immediately." and n: 10. Pick the top 3 results.
 
 ### Generate code scaffolding
 
@@ -190,7 +190,7 @@ Generate adversarial payload variants for manual security testing. All output is
 
 4. **Jimmy is not Claude.** Don't ask for complex reasoning, multi-step analysis, or precise instruction-following. Use Jimmy for volume: candidates, rewrites, quick validation, summaries. Use Claude for judgment.
 
-5. **Crank max_iterations for comparison.** When you want to compare multiple takes on the same prompt (especially summaries or transforms), set `max_iterations: 5` or higher rather than duplicating items.
+5. **Use the skill's volume control.** Raise `n` for candidates and `max_iterations` for summary variants. Transform and validate use one result per input item so their output cardinality stays predictable.
 
 6. **Validate results need Claude.** The validate skill parses YES/NO reliably (100% parse rate), but the 8B model only gets ~40-60% of nuanced technical questions right. Use it for cheap pre-screening, then have Claude review the flagged items.
 

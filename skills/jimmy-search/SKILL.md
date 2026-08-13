@@ -1,33 +1,31 @@
 ---
 name: jimmy-search
-description: Use when you need to generate candidate solutions and rank them with shell oracle tests, regex/SQL/shell search via pass_rate, or write-test-record selection against expected exit codes.
+description: Search a solution space by generating Jimmy candidates and ranking them with caller-supplied shell oracles when correctness is executable as exit-code tests.
 ---
 
-# jimmy-search
+# Jimmy search
 
-Generate N candidates, write each to a temp file, run oracle commands, rank by `pass_rate`.
+Generate `n` candidate solutions, test each through the same oracle suite, and rank by pass rate.
 
-**REQUIRED:** [jimmy-cli](references/jimmy-cli.md). Oracle protocol: [oracle](references/oracle.md).
-
-## Not for
-
-Open-ended generation without a test oracle (use jimmy-candidates) or executing adversarial payloads (use jimmy-fuzz for inert data only).
+Read [the Jimmy CLI contract](references/jimmy-cli.md) before the first call. Follow [the oracle protocol](references/oracle.md) for isolation, testing, cleanup, and ranking.
 
 ## Inputs
 
-| Param | Required | Default | Notes |
-|-------|----------|---------|-------|
-| `problem` | yes | — | What to solve |
-| `n` | yes | — | Candidates |
-| `test_cases` | yes | — | `[{ command, expected_exit }]` — command must contain `$CANDIDATE_FILE` |
-| `type` | no | — | `regex` / `sql` / `shell` shapes system prompt |
-| `system` | no | — | Appended after type default |
-| `max_concurrent` | no | 10 | |
+| Parameter | Required | Default | Contract |
+|---|---:|---:|---|
+| `problem` | yes | — | Non-empty solution prompt |
+| `n` | yes | — | Positive integer |
+| `test_cases` | yes | — | Non-empty array of `{ command, expected_exit }`; each command contains `$CANDIDATE_FILE` |
+| `type` | no | — | `regex`, `sql`, `shell`, or omitted |
+| `system` | no | — | Appended to the type-specific generator instruction |
+| `max_concurrent` | no | 10 | Positive integer |
+| `timeout_seconds` | no | 10 | Positive per-oracle-command timeout |
 
-## Steps
+The caller-supplied commands are the executable correctness boundary. Run them under the host's normal permission and sandbox policy.
 
-1. **Validate** — empty problem/n/test_cases → usage error. Each command must include `$CANDIDATE_FILE`. Stop.
-2. **System by type** — see [oracle](references/oracle.md).
-3. **Call once** — N identical `{prompt: problem, system}` items; `--max-iterations 1` explicitly.
-4. **Oracle** — for each candidate follow [oracle](references/oracle.md) write-test-record (never interpolate candidate text into shell).
-5. **Return** — bare JSON `{ candidates: [...sorted by pass_rate desc], summary: {...} }` only.
+## Process
+
+1. **Validate.** Enforce every input contract; require a non-empty command string and integer `expected_exit` for every case. Return a bare `usage` error object and stop on the first invalid input.
+2. **Generate.** Build `n` identical problem items with the type-specific system instruction. JSON-serialize them and invoke parallel mode once with `--max-concurrent MAX_CONCURRENT --max-iterations 1`.
+3. **Oracle.** Test every successful candidate with every test case using the oracle protocol. Preserve generation failures without running tests. Oracle work is complete when every candidate is either an API failure or has exactly `test_cases.length` recorded outcomes and all temporary files are removed.
+4. **Return.** Emit only `{ "candidates", "summary" }`, sorted by descending `pass_rate`, then ascending original index; API failures sort last. Completion requires `candidates.length = n` and summary counts that reconcile to `n`.

@@ -1,25 +1,29 @@
-# Validate + retry (jimmy-transform)
+# Transform validation and retry protocol
 
-Skip entirely if `validate` absent.
+This branch applies only when `validate` is present.
 
-## Check
+## Validate the constraint
 
-- `pattern`: regex search against full result string
-- `length`: `min_length` / `max_length` bounds (whichever present)
-- `both`: pattern AND length must pass
+- `type: pattern` requires a non-empty, compilable regex in `pattern`.
+- `type: length` requires at least one non-negative integer bound: `min_length` or `max_length`.
+- `type: both` requires both the regex and at least one length bound.
+- When both length bounds exist, require `min_length <= max_length`.
 
-## Retry
+Reject any other type with a `usage` error before calling Jimmy.
 
-On fail only: re-call **single-item** (not `--parallel`) with same prompt/system for that index, `--max-iterations 1`. Up to `max_retries` additional attempts (default 2 → 3 total calls). Sequential per failing item.
+## Check a response
 
-Exhausted → `result: null`, `error_type: "validation"`, `error: "validation failed: ..."`.
+- `pattern`: regex search over the full response.
+- `length`: Unicode character count satisfies every supplied bound.
+- `both`: both checks pass.
 
-Do not retry original API nulls. Silent retries (no narration).
+Produce a concrete failure reason containing the failed pattern or measured length and bound.
 
-## Output items
+## Retry in rounds
 
-Success: `{ index, input, instruction, result, tokens, elapsed_ms }`  
-API fail: `{ index, input, instruction, result: null, error, error_type }`  
-Validation fail: same as API fail with `error_type: "validation"`.
+1. Keep only original successes that fail the constraint; original API failures are final.
+2. For each retry round up to `max_retries`, build one batch containing all currently constraint-failing items with their original prompt and system instruction. Invoke `jimmy-skill --parallel --max-concurrent MAX_CONCURRENT --max-iterations 1` once for the round.
+3. Map retry results back to original indices. Accept passes, retain constraint failures for the next round, and make retry API failures final.
+4. After the last round, emit remaining constraint failures with `result: null`, `error_type: "validation"`, and `error: "validation failed: REASON"`.
 
-`result` is raw response text — do not strip. Array length = N. No summary object.
+Retries are additional attempts: `max_retries: 2` permits the initial batch plus two retry batches. Return tokens and elapsed time from the accepted attempt. Retry processing is complete when every original index is accepted or final and the output cardinality is unchanged.

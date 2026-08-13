@@ -1,48 +1,40 @@
-# jimmy-skill CLI
+# `jimmy-skill` batch contract
 
-Prerequisite: `jimmy-skill` on `$PATH` (build with `cargo build --release`, then install the binary).
+`jimmy-skill` must be installed on `PATH`. Parallel mode accepts a JSON array of `{ "prompt": string, "system"?: string }` objects on stdin and returns one ordered output item per input item.
 
-ChatJimmy is a fast, cheap Llama 3.1 8B (~17K tok/s). You reason and judge; Jimmy generates volume. No auth in open beta.
+## Serialize, invoke, verify
 
-## Parallel mode
+1. **Serialize.** Encode the complete input array with a JSON-aware serializer. Preserve prompts and system instructions as string values, including quotes, backslashes, newlines, and control characters. A quoted heredoc supplies shell-safe transport; JSON encoding happens first.
+2. **Invoke.** Make one batch call after the owning skill has validated positive concurrency and iteration values:
 
-**Always pass flags explicitly.** Binary defaults are `--max-concurrent 100` and `--max-iterations 25` — most skills override these.
+   ```bash
+   jimmy-skill --parallel --max-concurrent MAX --max-iterations ITERATIONS <<'JIMMY_INPUT'
+   SERIALIZED_JSON_ARRAY
+   JIMMY_INPUT
+   ```
 
-```bash
-jimmy-skill --parallel --max-concurrent N --max-iterations M << 'JIMMY_INPUT'
-[
-  {"prompt": "TEXT", "system": "OPTIONAL"}
-]
-JIMMY_INPUT
-```
+   Put shared system text on each JSON item when practical. The `--system` flag is also supported, and a per-item `system` overrides it.
+3. **Verify.** Parse stdout as JSON. On a nonzero exit, top-level error object, malformed JSON, or output shape/cardinality mismatch, return a bare error object immediately.
 
-| Rule | Why |
-|------|-----|
-| Quoted heredoc `'JIMMY_INPUT'` | Prevents `$` shell expansion in prompts |
-| Escape `"` as `\"` in JSON strings | Keep stdin JSON valid |
-| One parallel invocation per batch | Binary fans out HTTP; do not open N serial shells |
-| Prefer `--system` flag when all items share one system | Or put `"system"` per JSON item when they differ |
+## Successful output
 
-**Stdout shape** (ordered array, one entry per input item):
+The outer array preserves input order and `index`. Each item has exactly `ITERATIONS` result objects:
 
 ```json
 [
   {
     "index": 0,
     "results": [
-      { "response": "...", "tokens": { "prompt": 1, "completion": 1, "total": 2 }, "elapsed_ms": 400 }
+      {
+        "response": "...",
+        "tokens": { "prompt": 1, "completion": 1, "total": 2 },
+        "elapsed_ms": 400
+      }
     ]
   }
 ]
 ```
 
-Failed items keep their index; `response` is `null` with `error` / `error_type` (`timeout` | `network` | `api` | `parse` | `usage`). Other items still succeed.
+An individual request failure stays in place with `response: null`, zero token counts, `elapsed_ms`, `error`, and `error_type` (`timeout`, `network`, `api`, `parse`, or `usage`). Other items continue.
 
-## Single-prompt mode
-
-```bash
-jimmy-skill "prompt text" --system "optional"
-# or: echo "prompt" | jimmy-skill
-```
-
-Use parallel mode for multi-call skills.
+Batch verification is complete when the outer length equals the input length, every `index` equals its input position, and every `results.length` equals `ITERATIONS`.

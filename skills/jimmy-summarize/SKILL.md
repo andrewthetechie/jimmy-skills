@@ -1,37 +1,25 @@
 ---
 name: jimmy-summarize
-description: Use when you need a fast cheap summary of text, multiple summary variants via max_iterations, or a pre-pass summary before deeper Claude reasoning.
+description: Summarize supplied text with Jimmy for cheap compression or several summary variants before higher-level analysis.
 ---
 
-# jimmy-summarize
+# Jimmy summarize
 
-Summarize text with `jimmy-skill` (one parallel item; optional multiple variants via `--max-iterations`).
+Generate one or more summaries of the same text. The invoking agent owns any analytical synthesis across documents or claims.
 
-**REQUIRED:** Read [jimmy-cli](references/jimmy-cli.md).
-
-## Not for
-
-Analytical synthesis that needs Claude-level judgment, or multi-document research reports.
+Read [the Jimmy CLI contract](references/jimmy-cli.md) before the first call.
 
 ## Inputs
 
-| Param | Required | Default | Notes |
-|-------|----------|---------|-------|
-| `text` | yes | — | Text to summarize |
-| `system` | no | — | Appended after skill default |
-| `max_concurrent` | no | 10 | Passed through |
-| `max_iterations` | no | 1 | >1 yields multiple summaries in `results` |
+| Parameter | Required | Default | Contract |
+|---|---:|---:|---|
+| `text` | yes | — | Non-empty text to summarize |
+| `system` | no | — | Appended to the default summary instruction |
+| `max_iterations` | no | 1 | Positive number of variants |
 
-## Steps
+## Process
 
-1. **Validate** — empty `text` → `{"error":"text is required","error_type":"usage"}`. Bad concurrency/iterations → usage error. Stop.
-2. **Merge system** — default: `You are a summarizer. Produce a concise summary of the following text in 2-3 sentences.` If caller `system` set, append `\n` + caller text.
-3. **Call once** — one-item array; put merged system on the JSON item; pass `--max-iterations` explicitly:
-
-```bash
-jimmy-skill --parallel --max-concurrent MAX_CONCURRENT --max-iterations MAX_ITERATIONS << 'JIMMY_INPUT'
-[{"prompt":"TEXT","system":"MERGED_SYSTEM"}]
-JIMMY_INPUT
-```
-
-4. **Return** — bare JSON array from the binary as-is (no reshape).
+1. **Validate.** Reject empty `text` or `max_iterations < 1` with a bare `usage` error object. Stop before calling Jimmy.
+2. **Prompt.** Start with `You are a summarizer. Produce a concise summary of the following text in 2-3 sentences.` Append caller `system` on a new line when supplied.
+3. **Batch.** JSON-serialize one item containing `text` and the merged system instruction. Invoke parallel mode once with `--max-concurrent 1 --max-iterations MAX_ITERATIONS`.
+4. **Return.** Emit the CLI array unchanged. Completion requires one outer item whose `results` array contains exactly `max_iterations` success-or-failure entries.

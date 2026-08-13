@@ -1,49 +1,45 @@
-# Payload generation (jimmy-fuzz)
+# Inert payload protocol
 
-## Per-category system
+Normalize a category for lookup by lowercasing and replacing `-` with `_`. Preserve the caller's original category in output.
 
-Base: `You are a security payload generator. Generate exactly one {CAT} payload. Output only the raw payload string — no explanation, no label, no markdown, no quotes.`
+## Prompt each item
 
-Append one line when CAT matches:
+Base system instruction:
 
-| CAT | Extra line |
-|-----|------------|
-| xss | Cross-site scripting string that would execute JavaScript in a browser context. |
-| sqli | SQL injection string targeting a standard SQL WHERE clause. |
-| path_traversal | Path traversal sequence for Unix/Windows (e.g. `../`). |
-| command_injection | Shell metacharacters to inject system commands. |
-| xxe | XML External Entity injection fragment. |
-| ssrf | URL/parameter causing SSRF to an internal resource. |
-| open_redirect | URL/parameter causing open redirect. |
-| csrf | Token/header manipulation string for CSRF testing. |
-
-Unknown CAT: base only.
-
-## User message
-
-```
-Attack surface: {attack_surface}
-
-Generate one {CAT} payload for this attack surface.
+```text
+You are a security payload generator. Generate exactly one {CATEGORY} payload. Output exactly the raw payload string.
 ```
 
-## Call
+Append the matching specialization when known:
 
-```bash
-jimmy-skill --parallel --max-concurrent MAX --max-iterations 1 << 'JIMMY_INPUT'
-[{"prompt":"...","system":"..."}, ...]  # N identical items
-JIMMY_INPUT
+| Normalized category | Specialization |
+|---|---|
+| `xss` | Cross-site scripting string targeting a browser HTML context. |
+| `sqli` | SQL injection string targeting a standard SQL `WHERE` clause. |
+| `path_traversal` | Path traversal sequence for Unix or Windows. |
+| `command_injection` | Shell metacharacters representing command injection. |
+| `xxe` | XML External Entity injection fragment. |
+| `ssrf` | URL or parameter representing access to an internal resource. |
+| `open_redirect` | URL or parameter representing an open redirect. |
+| `csrf` | Token or header manipulation string representing CSRF. |
+
+Use this user prompt:
+
+```text
+Attack surface: {ATTACK_SURFACE}
+
+Generate one {CATEGORY} payload for this attack surface.
 ```
 
-One call per category. Never put payload text in any later shell command.
+Build all `attack_types.length × n` prompt/system pairs before the single Jimmy batch call. Payload text appears only after that call and remains in memory; no later shell operation may contain it.
 
-## Severity
+## Shape
 
-sqli, command_injection → critical; xss, path_traversal, xxe, ssrf → high; open_redirect, csrf, other → medium.
+Severity is `critical` for `sqli` and `command_injection`; `high` for `xss`, `path_traversal`, `xxe`, and `ssrf`; `medium` otherwise.
 
-## Item + summary
+- Success: `{ "index", "category", "payload", "severity", "tokens", "elapsed_ms" }`, with `payload` trimmed.
+- Failure: the same identity fields with `payload: null`, `error`, and `error_type`.
+- `summary`: `{ "total", "by_category", "api_errors" }`.
+- `warning`: state that payloads are inert strings, were not executed by the agent, and require authorized human-controlled testing.
 
-Success: `{ index, category, payload: trimmed, severity, tokens, elapsed_ms }`  
-Fail: `payload: null` + error fields.
-
-`summary`: `total`, `by_category`, `api_errors`. `payloads.length === n × len(attack_types)`.
+Assembly is complete when global indices are contiguous and every summary count reconciles to the payload array.

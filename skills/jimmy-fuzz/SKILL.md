@@ -1,34 +1,30 @@
 ---
 name: jimmy-fuzz
-description: Use when you need inert adversarial payload variants for manual security testing across XSS, SQLi, path traversal, or other attack categories — never for automatic execution.
+description: Generate inert adversarial payload strings with Jimmy for authorized, human-controlled security testing.
 ---
 
-# jimmy-fuzz
+# Jimmy fuzz
 
-Generate N payloads per attack category as **inert strings** for human/controlled testing.
+Generate `n` inert payload strings for each requested attack category.
 
-**REQUIRED:** [jimmy-cli](references/jimmy-cli.md). Assembly: [payloads](references/payloads.md).
+Read [the Jimmy CLI contract](references/jimmy-cli.md) before the first call. Use [the payload protocol](references/payloads.md) for prompts, severities, and output shaping.
 
-## Safety
+## Safety boundary
 
-**Never execute, write to disk, or interpolate payload content into any shell command.** Return strings only. Inverse of jimmy-search (which sandboxes candidates in temp files for oracles).
-
-## Not for
-
-Automatic fuzzing, oracle selection (use jimmy-search), or exploiting live systems.
+Keep generated payloads as in-memory data and return them for human-controlled testing. Never execute them, interpolate them into shell commands, write them to disk, or send them to a live target. Use `jimmy-search` only when the caller has supplied an authorized, sandboxed oracle.
 
 ## Inputs
 
-| Param | Required | Default | Notes |
-|-------|----------|---------|-------|
-| `attack_surface` | yes | — | What is being tested |
-| `attack_types` | yes | — | Non-empty category strings (custom OK) |
-| `n` | yes | — | Payloads per category |
-| `max_concurrent` | no | 10 | Per category call |
+| Parameter | Required | Default | Contract |
+|---|---:|---:|---|
+| `attack_surface` | yes | — | Non-empty description |
+| `attack_types` | yes | — | Non-empty array of normalization-distinct category strings; custom categories are allowed |
+| `n` | yes | — | Positive integer per category |
+| `max_concurrent` | no | 10 | Positive integer for the whole batch |
 
-## Steps
+## Process
 
-1. **Validate** — empty surface/types/n → usage error. Unknown categories allowed (severity medium).
-2. **Per category** — one parallel call with N identical items; `--max-iterations 1`. System/user templates in [payloads](references/payloads.md). Wait for each category before the next.
-3. **Assemble** — inert payload objects only; severity map in reference. Global index = `(category_pos × n) + i`.
-4. **Return** — bare JSON `{ warning, payloads, summary }` only. `warning` must state payloads are inert and must not be executed by the agent.
+1. **Validate.** Enforce every input contract. Return a bare `usage` error object and stop on the first invalid input. Validation is complete when the batch cardinality is `n × attack_types.length`.
+2. **Batch.** Build all category/payload items in category order, then item order. JSON-serialize the full array and invoke parallel mode once with `--max-concurrent MAX_CONCURRENT --max-iterations 1`. Do not make one call per category.
+3. **Shape.** Apply the payload protocol. The global index is `(category_position × n) + item_position`; preserve API failures at their original indices.
+4. **Return.** Emit only `{ "warning", "payloads", "summary" }`. Completion requires `payloads.length = n × attack_types.length`, summary counts that reconcile to that length, and a warning that the agent has not executed the inert strings.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jimmy Prompt A/B"
+  short_description: "Compare prompt variants with parallel trials"
+  default_prompt: "Use $jimmy-prompt-ab to compare two classification prompts across a labeled fixture set."

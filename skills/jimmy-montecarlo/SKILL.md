@@ -1,40 +1,26 @@
 ---
 name: jimmy-montecarlo
-description: Use when you need to measure prompt stability, agreement rate across repeated identical Jimmy calls, variance before production prompts, or a stable/unstable verdict with response distribution.
+description: Measure Jimmy prompt stability by repeating an identical prompt and computing exact-response agreement before relying on its output shape or wording.
 ---
 
-# jimmy-montecarlo
+# Jimmy Monte Carlo
 
-Run **one** prompt **N** times (`--max-iterations N`); compute agreement metrics and a stability verdict.
+Repeat one prompt `n` times and measure normalized exact-response agreement. Semantic equivalence and factual accuracy remain with the invoking agent.
 
-**REQUIRED:** [jimmy-cli](references/jimmy-cli.md). Metrics: [metrics](references/metrics.md).
-
-## Not for
-
-Generating diverse candidates (use jimmy-candidates) or classification voting (use jimmy-classify).
+Read [the Jimmy CLI contract](references/jimmy-cli.md) before the first call. Compute the result with [the metrics protocol](references/metrics.md).
 
 ## Inputs
 
-| Param | Required | Default | Notes |
-|-------|----------|---------|-------|
-| `prompt` | yes | — | Identical prompt every sample |
-| `n` | yes | — | Samples (≥1; warn if `<10`) |
-| `threshold` | no | 0.7 | Agreement cutoff for `stable` |
-| `system` | no | `You are a helpful assistant.` | Caller replaces default if set |
-| `max_concurrent` | no | 100 | |
+| Parameter | Required | Default | Contract |
+|---|---:|---:|---|
+| `prompt` | yes | — | Non-empty string, unchanged across samples |
+| `n` | yes | — | Positive integer; values below 10 require a warning |
+| `threshold` | no | 0.7 | Number in `[0, 1]` |
+| `system` | no | `You are a helpful assistant.` | Replaces the default when supplied |
 
-## Steps
+## Process
 
-1. **Validate** — empty prompt / bad `n` / threshold outside 0–1 → usage error. If `1 ≤ n ≤ 9`, continue but set low-n warning for output.
-2. **Call once** — **one** JSON item; set `--max-iterations` to `n` (this is the diversity lever):
-
-```bash
-jimmy-skill --parallel --max-concurrent MAX --max-iterations N << 'JIMMY_INPUT'
-[{"prompt":"PROMPT","system":"SYSTEM"}]
-JIMMY_INPUT
-```
-
-Read `output[0].results[0..N-1]` — **not** `output[i].results[0]`.
-
-3. **Metrics** — [metrics](references/metrics.md).
-4. **Return** — bare JSON object only (`prompt`, `samples`, `metrics`, `verdict`, `raw_responses`, optional `warning`).
+1. **Validate.** Enforce every input contract. Return a bare `usage` error object and stop on invalid input; retain a low-sample warning when `n < 10`.
+2. **Repeat.** JSON-serialize one item and invoke parallel mode once with `--max-concurrent 1 --max-iterations N`. Read all samples from `output[0].results`; the call is complete only when that array contains exactly `n` entries.
+3. **Measure.** Apply the metrics protocol to all successes and failures. API failures reduce reliability and can never contribute to agreement.
+4. **Return.** Emit only `{ "prompt", "samples", "metrics", "verdict", "raw_responses", "warning"? }`. Completion requires `raw_responses.length = n` and metric counts that sum to `n`.

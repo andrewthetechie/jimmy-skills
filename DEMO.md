@@ -259,3 +259,128 @@ After running, record these numbers for your system:
 
 This benchmark used `36 items x 50 iterations = 1,800 generations`.
 
+## Advanced Skill Demos
+
+These prompts exercise the five higher-level skills through an Agent Skills host. Each skill makes one Jimmy generation batch, then performs deterministic validation, aggregation, reduction, or oracle testing locally.
+
+### Compare prompt variants with `jimmy-prompt-ab`
+
+This creates `2 variants × 4 cases × 5 repetitions = 40` parallel trials. Expected labels stay out of Jimmy's prompts and are used only by the evaluator.
+
+```text
+Use /jimmy-prompt-ab with:
+
+variants: [
+  {
+    "name": "direct",
+    "prompt": "Classify this commit as bug, feature, chore, or docs. Reply with one label.\n\n{input}"
+  },
+  {
+    "name": "role-and-options",
+    "prompt": "You are triaging a release. Choose exactly one label from: bug, feature, chore, docs.\nCommit: {input}\nLabel:"
+  }
+]
+
+cases: [
+  {"id":"null-fix", "input":"fix: prevent null dereference when email is absent", "expected":"bug"},
+  {"id":"export", "input":"feat: add CSV export to reports", "expected":"feature"},
+  {"id":"deps", "input":"chore: update serde to 1.0.228", "expected":"chore"},
+  {"id":"readme", "input":"docs: add authentication example", "expected":"docs"}
+]
+
+scoring: "exact"
+repetitions: 5
+
+Report the winner and explain any quality/reliability tradeoff using the returned metrics.
+```
+
+### Extract consensus records with `jimmy-extract`
+
+This creates `3 items × 3 attempts = 9` calls. Each response must parse as the exact schema; consensus confidence falls when valid attempts disagree.
+
+```text
+Use /jimmy-extract with:
+
+items: [
+  {"id":"ticket-101", "text":"Alice Ng (alice@example.com) cannot export invoices. Priority is high. Tags: billing, csv."},
+  {"id":"ticket-102", "text":"Low priority request from Bob to add dark mode. Contact bob@example.org. Tags: ui."},
+  {"id":"ticket-103", "text":"Production login outage reported by Carol; no email supplied. Critical auth incident."}
+]
+
+schema: {
+  "customer":"string",
+  "email":"string",
+  "priority":"string",
+  "tags":"string[]"
+}
+
+instruction: "Extract support-ticket metadata. Use null for absent values."
+attempts: 3
+
+Return the extraction records and flag any confidence below 0.67 for human review.
+```
+
+### Map and reduce a corpus with `jimmy-mapreduce`
+
+The skill chunks each document deterministically, makes one map call per chunk, and asks the host agent to synthesize only source-labeled map results.
+
+```text
+Use /jimmy-mapreduce with:
+
+documents: [
+  {"id":"retro-march", "text":"<paste the March retrospective>"},
+  {"id":"retro-april", "text":"<paste the April retrospective>"},
+  {"id":"retro-may", "text":"<paste the May retrospective>"}
+]
+
+instruction: "Extract recurring delivery blockers, evidence of impact, and named follow-up actions."
+chunk_chars: 12000
+overlap_chars: 500
+reducer: "agent"
+
+Produce a synthesis grouped by recurring blocker, citing document and chunk IDs and listing any failed chunks as evidence gaps.
+
+### Search isolated patches with `jimmy-patchsearch`
+
+Every patch is generated from `HEAD`, applied in a disposable detached worktree, and tested there. The current working tree remains unchanged.
+
+```text
+Use /jimmy-patchsearch with:
+
+task: "Simplify resolve_system_prompt without changing its public behavior or error messages."
+context_files: [
+  "crates/jimmy-skill/src/cli.rs",
+  "crates/jimmy-skill/tests/cli_args.rs"
+]
+allowed_paths: ["crates/jimmy-skill/src/cli.rs"]
+test_commands: [
+  "cargo test -p jimmy-skill --test cli_args",
+  "cargo clippy -p jimmy-skill --all-targets -- -D warnings"
+]
+n: 5
+base_ref: "HEAD"
+timeout_seconds: 120
+
+Return the ranked evidence bundle. Review the winning diff, but leave my working tree unchanged.
+```
+
+### Run an explicit generic map with `jimmy-map`
+
+`jimmy-map` is explicit-only. This example creates `3 inputs × 2 iterations = 6` outputs and strictly parses each as JSON.
+
+```text
+Use /jimmy-map with:
+
+inputs: [
+  {"id":"timeout", "input":"Request timed out after 120 seconds while contacting api.example.com"},
+  {"id":"auth", "input":"JWT validation failed because the token expired yesterday"},
+  {"id":"disk", "input":"Write failed: no space left on device"}
+]
+
+prompt_template: "Return one JSON object with keys category and search_query for this error.\nError ID: {id}\nError: {input}"
+system: "Output exactly one raw JSON object."
+iterations: 2
+output: "json"
+
+Return all parsed outputs and the success/error summary without choosing a preferred answer.
+```

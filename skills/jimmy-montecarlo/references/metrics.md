@@ -1,17 +1,27 @@
-# Monte Carlo metrics (jimmy-montecarlo)
+# Monte Carlo metrics protocol
 
-`raw_responses[i] = output[0].results[i].response` (preserve nulls in output; treat null as `""` for counting/length).
+Set `raw_responses[i] = output[0].results[i].response`, preserving nulls. Count a null as an API failure and exclude it from response agreement.
 
-## normalize(s) — for uniqueness/agreement only
+## Normalize successful responses
 
-null → `""`; lowercase; trim; strip trailing `.,!?;:`; trim again.
+Lowercase, trim whitespace, strip trailing `.,!?;:`, then trim again. Use normalized strings only for uniqueness and agreement; use raw strings for length metrics.
 
 ## Compute
 
-- `response_distribution`: counts of normalized strings
-- `unique_responses`: distinct keys
-- `top_response`: highest count; tie → lexicographically first key; `agreement_rate = top_count / N` (4 decimals)
-- Length stats on **raw** strings (null length 0): mean, population stddev, min, max (mean/stddev 2 decimals)
-- `verdict`: `stable` if `agreement_rate >= threshold` else `unstable` (default threshold 0.7)
+Let `N` be requested samples, `S` non-null responses, and `E = N - S` failures.
 
-If n was 1–9: add `"warning": "n < 10 produces statistically unreliable variance estimates; recommend n >= 10"`.
+- `samples`: `N`
+- `successful_samples`: `S`
+- `api_errors`: `E`
+- `reliability_rate`: `S / N`
+- `response_distribution`: counts of normalized successful strings
+- `unique_responses`: number of distribution keys
+- `top_response`: highest-count normalized response; break ties lexicographically; null when `S = 0`
+- `agreement_rate`: `top_count / S`; use `0` when `S = 0`
+- `length`: mean, population standard deviation, minimum, and maximum over raw successful response character counts; all zero when `S = 0`
+
+Round rates to four decimals and mean/standard deviation to two decimals.
+
+`verdict` is `stable` only when `E = 0` and `agreement_rate >= threshold`; otherwise it is `unstable`. When `N < 10`, add `"warning": "n < 10 produces statistically unreliable variance estimates; recommend n >= 10"`.
+
+Metrics are complete when `successful_samples + api_errors = samples` and the response-distribution counts sum to `successful_samples`.
